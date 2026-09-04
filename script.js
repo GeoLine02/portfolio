@@ -1,154 +1,200 @@
-// ========================================
-// Portfolio JavaScript - Music Player & Interactivity
-// ========================================
+// ============================================================================
+// Portfolio — interactivity
+//
+// Visual language matches the 404Friends landing site: every animation here is
+// gated on prefers-reduced-motion, and every piece of styling lives in
+// style.css (nothing is injected as inline CSS from JS any more).
+// ============================================================================
+
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize intro overlay first
+    initTheme();
     initIntroOverlay();
-
-    // Initialize all other modules
     initNavigation();
     initScrollReveal();
     initMusicPlayer();
-    initContactForm();
     initSmoothScroll();
 });
 
-// ========================================
-// Intro Overlay - Starts Music on Enter
-// ========================================
+// ============================================================================
+// Theme — light/dark, mirroring next-themes on the landing site.
+// The pre-paint script in index.html <head> already applied the stored value;
+// this only wires the toggle and keeps <meta name="theme-color"> in sync.
+// ============================================================================
+function initTheme() {
+    const root = document.documentElement;
+    const toggle = document.getElementById('themeToggle');
+    const meta = document.querySelector('meta[name="theme-color"]');
+
+    const syncMeta = () => {
+        if (meta) meta.content = root.dataset.theme === 'light' ? '#f2f2f5' : '#0b0b12';
+    };
+
+    syncMeta();
+
+    toggle?.addEventListener('click', () => {
+        const next = root.dataset.theme === 'light' ? 'dark' : 'light';
+        root.dataset.theme = next;
+        syncMeta();
+        try {
+            localStorage.setItem('theme', next);
+        } catch (e) {
+            /* storage blocked — the choice just won't persist */
+        }
+    });
+}
+
+// ============================================================================
+// Boot overlay — starts the soundtrack on the user's first real gesture, which
+// is also what keeps autoplay policies happy.
+// ============================================================================
 function initIntroOverlay() {
     const overlay = document.getElementById('introOverlay');
     const enterBtn = document.getElementById('enterBtn');
     const audio = document.getElementById('audioPlayer');
     const playBtn = document.getElementById('playBtn');
     const player = document.getElementById('musicPlayer');
+    const volumeSlider = document.getElementById('volumeSlider');
 
     enterBtn?.addEventListener('click', () => {
-        // Hide overlay with animation
-        overlay.classList.add('hidden');
+        overlay?.classList.add('hidden');
 
-        // Set volume to 15% and play music
-        if (audio) {
-            audio.volume = 0.15;
-            audio.play()
-                .then(() => {
-                    if (playBtn) playBtn.classList.add('playing');
-                    if (player) player.classList.add('expanded');
-                    // Update volume slider
-                    const volumeSlider = document.getElementById('volumeSlider');
-                    if (volumeSlider) volumeSlider.value = 15;
-                })
-                .catch(err => console.log('Audio error:', err));
-        }
+        if (!audio) return;
+        audio.volume = 0.15;
+        if (volumeSlider) volumeSlider.value = 15;
+
+        audio.play()
+            .then(() => {
+                playBtn?.classList.add('playing');
+                player?.classList.add('expanded');
+            })
+            .catch(err => console.log('Audio error:', err));
     });
 }
 
-// ========================================
-// Navigation
-// ========================================
+// ============================================================================
+// Navigation — scroll spy, translucent bar, mobile drawer
+// ============================================================================
 function initNavigation() {
+    const navbar = document.querySelector('.navbar');
     const navToggle = document.querySelector('.nav-toggle');
     const navLinks = document.querySelector('.nav-links');
     const navItems = document.querySelectorAll('.nav-link');
-
-    // Mobile menu toggle
-    navToggle?.addEventListener('click', () => {
-        navLinks.classList.toggle('active');
-        navToggle.classList.toggle('active');
-    });
-
-    // Close menu on link click
-    navItems.forEach(item => {
-        item.addEventListener('click', () => {
-            navLinks.classList.remove('active');
-            navToggle.classList.remove('active');
-        });
-    });
-
-    // Active link on scroll
     const sections = document.querySelectorAll('section[id]');
 
-    window.addEventListener('scroll', () => {
-        const scrollY = window.scrollY;
+    const closeMenu = () => {
+        navLinks?.classList.remove('active');
+        navToggle?.classList.remove('active');
+        navToggle?.setAttribute('aria-expanded', 'false');
+    };
 
-        sections.forEach(section => {
-            const sectionHeight = section.offsetHeight;
-            const sectionTop = section.offsetTop - 100;
-            const sectionId = section.getAttribute('id');
+    navToggle?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = !navLinks.classList.contains('active');
+        navLinks.classList.toggle('active', open);
+        navToggle.classList.toggle('active', open);
+        navToggle.setAttribute('aria-expanded', String(open));
+    });
 
-            if (scrollY > sectionTop && scrollY <= sectionTop + sectionHeight) {
+    navItems.forEach(item => item.addEventListener('click', closeMenu));
+
+    // clicking anywhere outside the open drawer closes it
+    document.addEventListener('click', (e) => {
+        if (!navLinks?.classList.contains('active')) return;
+        if (navLinks.contains(e.target) || navToggle?.contains(e.target)) return;
+        closeMenu();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMenu();
+    });
+
+    // One rAF-batched scroll handler for both the bar state and the scroll spy —
+    // the old code ran two independent listeners doing layout reads per event.
+    let ticking = false;
+    const onScroll = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(() => {
+            const y = window.scrollY;
+
+            navbar?.classList.toggle('scrolled', y > 50);
+
+            let currentId = '';
+            sections.forEach(section => {
+                if (y >= section.offsetTop - 120) currentId = section.id;
+            });
+            if (currentId) {
                 navItems.forEach(item => {
-                    item.classList.remove('active');
-                    if (item.getAttribute('href') === `#${sectionId}`) {
-                        item.classList.add('active');
-                    }
+                    item.classList.toggle('active', item.getAttribute('href') === `#${currentId}`);
                 });
             }
-        });
-    });
 
-    // Navbar background on scroll
-    const navbar = document.querySelector('.navbar');
-    window.addEventListener('scroll', () => {
-        if (window.scrollY > 50) {
-            navbar.style.background = 'rgba(10, 10, 15, 0.95)';
-        } else {
-            navbar.style.background = 'rgba(10, 10, 15, 0.8)';
-        }
-    });
-}
-
-// ========================================
-// Smooth Scroll
-// ========================================
-function initSmoothScroll() {
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function (e) {
-            e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-                target.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                });
-            }
-        });
-    });
-}
-
-// ========================================
-// Scroll Reveal Animation
-// ========================================
-function initScrollReveal() {
-    const revealElements = document.querySelectorAll(
-        '.about-card, .skill-card, .project-card, .contact-info, .contact-form'
-    );
-
-    // Add reveal class
-    revealElements.forEach(el => el.classList.add('reveal'));
-
-    const revealOnScroll = () => {
-        revealElements.forEach(el => {
-            const elementTop = el.getBoundingClientRect().top;
-            const windowHeight = window.innerHeight;
-
-            if (elementTop < windowHeight - 100) {
-                el.classList.add('active');
-            }
+            ticking = false;
         });
     };
 
-    // Initial check
-    revealOnScroll();
-
-    // Check on scroll
-    window.addEventListener('scroll', revealOnScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
 }
 
-// ========================================
-// Music Player
-// ========================================
+// ============================================================================
+// Smooth scroll
+// ============================================================================
+function initSmoothScroll() {
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            const href = this.getAttribute('href');
+            if (!href || href === '#') return;
+            const target = document.querySelector(href);
+            if (!target) return;
+            e.preventDefault();
+            target.scrollIntoView({
+                behavior: REDUCED_MOTION.matches ? 'auto' : 'smooth',
+                block: 'start',
+            });
+        });
+    });
+}
+
+// ============================================================================
+// Scroll reveal — the landing site's Reveal.tsx in plain CSS + IntersectionObserver
+// (fade + 24px rise, 0.8s, cubic-bezier(0.22, 1, 0.36, 1), fires once at -80px).
+// ============================================================================
+function initScrollReveal() {
+    const elements = document.querySelectorAll('[data-reveal]');
+    if (!elements.length) return;
+
+    if (REDUCED_MOTION.matches || !('IntersectionObserver' in window)) {
+        elements.forEach(el => el.classList.add('reveal', 'active'));
+        return;
+    }
+
+    // stagger siblings within the same container, like `delay: i * 0.06` on Landing
+    const seen = new Map();
+    elements.forEach(el => {
+        el.classList.add('reveal');
+        const parent = el.parentElement;
+        const index = seen.get(parent) ?? 0;
+        el.style.setProperty('--i', String(index));
+        seen.set(parent, index + 1);
+    });
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            entry.target.classList.add('active');
+            observer.unobserve(entry.target);
+        });
+    }, { rootMargin: '0px 0px -80px 0px', threshold: 0 });
+
+    elements.forEach(el => observer.observe(el));
+}
+
+// ============================================================================
+// Music player
+// ============================================================================
 function initMusicPlayer() {
     const player = document.getElementById('musicPlayer');
     const toggle = document.getElementById('playerToggle');
@@ -162,266 +208,108 @@ function initMusicPlayer() {
     const timeCurrent = document.querySelector('.time-current');
     const timeTotal = document.querySelector('.time-total');
 
+    if (!player || !audio) return;
+
     let isExpanded = false;
 
-    // Toggle player expansion
+    const setExpanded = (value) => {
+        isExpanded = value;
+        player.classList.toggle('expanded', value);
+    };
+
     toggle?.addEventListener('click', (e) => {
         e.stopPropagation();
-        isExpanded = !isExpanded;
-        player.classList.toggle('expanded', isExpanded);
+        setExpanded(!isExpanded);
     });
 
-    // Close player when clicking outside
     document.addEventListener('click', (e) => {
-        if (isExpanded && !player.contains(e.target)) {
-            isExpanded = false;
-            player.classList.remove('expanded');
-        }
+        if (isExpanded && !player.contains(e.target)) setExpanded(false);
     });
 
-    // Play/Pause functionality
     playBtn?.addEventListener('click', () => {
         if (audio.paused) {
             audio.play()
-                .then(() => {
-                    playBtn.classList.add('playing');
-                })
-                .catch(err => {
-                    console.log('Audio playback failed:', err);
-                    showNotification('🎵 Please add chubina.mp3 to the assets folder');
-                });
+                .then(() => playBtn.classList.add('playing'))
+                .catch(() => showNotification('Track unavailable — check assets/'));
         } else {
             audio.pause();
             playBtn.classList.remove('playing');
         }
     });
 
-    // Update progress bar
-    audio?.addEventListener('timeupdate', () => {
-        const progress = (audio.currentTime / audio.duration) * 100;
-        progressFill.style.width = `${progress}%`;
-        timeCurrent.textContent = formatTime(audio.currentTime);
+    audio.addEventListener('timeupdate', () => {
+        if (!audio.duration) return;
+        if (progressFill) progressFill.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+        if (timeCurrent) timeCurrent.textContent = formatTime(audio.currentTime);
     });
 
-    // Load metadata
-    audio?.addEventListener('loadedmetadata', () => {
-        timeTotal.textContent = formatTime(audio.duration);
+    audio.addEventListener('loadedmetadata', () => {
+        if (timeTotal) timeTotal.textContent = formatTime(audio.duration);
     });
 
-    // Seek functionality
     progressBar?.addEventListener('click', (e) => {
+        if (!audio.duration) return;
         const rect = progressBar.getBoundingClientRect();
-        const percent = (e.clientX - rect.left) / rect.width;
-        audio.currentTime = percent * audio.duration;
+        audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
     });
 
-    // Volume control
     volumeSlider?.addEventListener('input', (e) => {
         audio.volume = e.target.value / 100;
     });
 
-    // Set initial volume to 15%
-    if (audio && volumeSlider) {
-        audio.volume = 0.15;
-        volumeSlider.value = 15;
-    }
+    audio.volume = 0.15;
+    if (volumeSlider) volumeSlider.value = 15;
 
-    // Autoplay on page load
-    if (audio && player && playBtn) {
-        // Expand the player
-        isExpanded = true;
-        player.classList.add('expanded');
+    // Autoplay attempt. Browsers block sound before a gesture, which is exactly
+    // what the boot overlay's Enter button provides — this is only the fallback
+    // for a return visit where the browser already trusts the origin.
+    setExpanded(true);
+    setTimeout(() => {
+        audio.play()
+            .then(() => playBtn?.classList.add('playing'))
+            .catch(() => {
+                document.addEventListener('click', function startOnClick() {
+                    audio.play().then(() => playBtn?.classList.add('playing')).catch(() => { });
+                    document.removeEventListener('click', startOnClick);
+                }, { once: true });
+            });
+    }, 500);
 
-        // Try to autoplay (may be blocked by browser policy)
-        const tryAutoplay = () => {
-            audio.play()
-                .then(() => {
-                    playBtn.classList.add('playing');
-                })
-                .catch(err => {
-                    console.log('Autoplay blocked by browser. Click to play.');
-                    // Add click listener to start on first interaction
-                    document.addEventListener('click', function startOnClick() {
-                        audio.play().then(() => {
-                            playBtn.classList.add('playing');
-                        });
-                        document.removeEventListener('click', startOnClick);
-                    }, { once: true });
-                });
-        };
+    prevBtn?.addEventListener('click', () => { audio.currentTime = 0; });
+    nextBtn?.addEventListener('click', () => { audio.currentTime = 0; });
 
-        // Small delay to ensure DOM is ready
-        setTimeout(tryAutoplay, 500);
-    }
-
-    // Previous/Next buttons (for future playlist support)
-    prevBtn?.addEventListener('click', () => {
+    audio.addEventListener('ended', () => {
+        playBtn?.classList.remove('playing');
+        if (progressFill) progressFill.style.width = '0%';
         audio.currentTime = 0;
     });
 
-    nextBtn?.addEventListener('click', () => {
-        audio.currentTime = 0;
-    });
-
-    // When audio ends
-    audio?.addEventListener('ended', () => {
-        playBtn.classList.remove('playing');
-        progressFill.style.width = '0%';
-        audio.currentTime = 0;
-    });
-
-    // Format time helper
     function formatTime(seconds) {
         if (isNaN(seconds)) return '0:00';
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
-
-    // Notification helper
-    function showNotification(message) {
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            bottom: 100px;
-            right: 24px;
-            background: linear-gradient(135deg, #8b5cf6, #06b6d4);
-            color: white;
-            padding: 16px 24px;
-            border-radius: 12px;
-            font-weight: 500;
-            z-index: 9999;
-            animation: slideIn 0.3s ease, slideOut 0.3s ease 2.7s forwards;
-        `;
-        notification.textContent = message;
-        document.body.appendChild(notification);
-
-        setTimeout(() => notification.remove(), 3000);
-    }
-
-    // Add notification animation styles
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes slideOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(100%); opacity: 0; }
-        }
-    `;
-    document.head.appendChild(style);
 }
 
-// ========================================
-// Contact Form
-// ========================================
-function initContactForm() {
-    const form = document.getElementById('contactForm');
-
-    form?.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        // Get form data
-        const formData = new FormData(form);
-        const data = Object.fromEntries(formData);
-
-        // Simple validation
-        if (!data.name || !data.email || !data.message) {
-            showFormMessage('Please fill in all fields', 'error');
-            return;
-        }
-
-        if (!isValidEmail(data.email)) {
-            showFormMessage('Please enter a valid email', 'error');
-            return;
-        }
-
-        // Simulate form submission
-        const btn = form.querySelector('button[type="submit"]');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<span>Sending...</span>';
-        btn.disabled = true;
-
-        setTimeout(() => {
-            showFormMessage('Message sent successfully! 🎉', 'success');
-            form.reset();
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }, 1500);
-    });
-
-    function isValidEmail(email) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    }
-
-    function showFormMessage(message, type) {
-        // Remove existing message
-        const existingMsg = document.querySelector('.form-message');
-        existingMsg?.remove();
-
-        const msgEl = document.createElement('div');
-        msgEl.className = `form-message ${type}`;
-        msgEl.style.cssText = `
-            padding: 12px 20px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-weight: 500;
-            text-align: center;
-            animation: fadeIn 0.3s ease;
-            ${type === 'success'
-                ? 'background: rgba(39, 201, 63, 0.2); color: #27c93f; border: 1px solid rgba(39, 201, 63, 0.3);'
-                : 'background: rgba(255, 95, 86, 0.2); color: #ff5f56; border: 1px solid rgba(255, 95, 86, 0.3);'
-            }
-        `;
-        msgEl.textContent = message;
-
-        form.insertBefore(msgEl, form.firstChild);
-
-        setTimeout(() => msgEl.remove(), 4000);
-    }
+// Terminal-style toast. Styling lives in .toast (style.css) — nothing inline.
+function showNotification(message) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
 }
 
-// ========================================
-// Utility Functions
-// ========================================
-
-// Debounce function for performance
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-// Throttle function for performance
-function throttle(func, limit) {
-    let inThrottle;
-    return function (...args) {
-        if (!inThrottle) {
-            func.apply(this, args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
-        }
-    };
-}
-
-// Add fadeIn animation
-const fadeStyle = document.createElement('style');
-fadeStyle.textContent = `
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-`;
-document.head.appendChild(fadeStyle);
-
+// ============================================================================
 // Console greeting
-console.log('%c👋 Hey there, curious developer!', 'font-size: 20px; font-weight: bold; color: #8b5cf6;');
-console.log('%cLooking at my code? Feel free to reach out - I love talking about web development!', 'font-size: 14px; color: #06b6d4;');
+// ============================================================================
+console.log(
+    '%c~/nika — hey there, curious developer',
+    'font-family: monospace; font-size: 14px; font-weight: bold; letter-spacing: 2px; color: #a78bfa;'
+);
+console.log(
+    '%c// reading the source? say hi: wuladzenika04@gmail.com',
+    'font-family: monospace; font-size: 12px; color: #6ee7d7;'
+);
